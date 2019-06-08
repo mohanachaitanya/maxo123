@@ -1,0 +1,279 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "AWS CloudFormation Sample Template VPC with Three Subnets"
+Parameters:
+  VPCName:
+    Description: Name of the VPC
+    Type: String
+    Default: chaitu-VPC
+  PublicInstanceName:
+    Description: Name of the Public Instance
+    Type: String
+    Default: chaitu-public
+  PrivateInstanceName:
+    Description: Name of the private Instance
+    Type: String
+    Default: chaitu-private
+  CIDRRange:
+    Description: VPC CIDR Range (will be a /16 block)
+    Type: String
+    Default: 10.10.0.0/16
+  PublicSubnetCidr:
+    Description:  CIDR Range for Public subnet
+    Type: String
+    Default: 10.10.0.0/24
+  PrivateSubnetCidr:
+    Description:  CIDR Range for Private subnet
+    Type: String
+    Default: 10.10.1.0/24
+  PublicSecurityGroupName:
+    Description: Name of Public Security Group
+    Type: String
+    Default: chaitu-public
+  PrivateSecurityGroupName:
+    Description: Name of Private Securtiy Group
+    Type: String
+    Default: chaitu-private
+  SSHLocation:
+    Description: The IP address range that can be used to SSH to the EC2 instances
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 0.0.0.0/0
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+  InstanceTypeParameter:
+    Type: String
+    Default: t2.micro
+    AllowedValues: [t1.micro, t2.nano, t2.micro, t2.small, t2.medium, t2.large, m1.small,
+      m1.medium, m1.large, m1.xlarge, m2.xlarge, m2.2xlarge, m2.4xlarge, m3.medium,
+      m3.large, m3.xlarge, m3.2xlarge, m4.large, m4.xlarge, m4.2xlarge, m4.4xlarge,
+      m4.10xlarge, c1.medium, c1.xlarge, c3.large, c3.xlarge, c3.2xlarge, c3.4xlarge,
+      c3.8xlarge, c4.large, c4.xlarge, c4.2xlarge, c4.4xlarge, c4.8xlarge, g2.2xlarge,
+      g2.8xlarge, r3.large, r3.xlarge, r3.2xlarge, r3.4xlarge, r3.8xlarge, i2.xlarge,
+      i2.2xlarge, i2.4xlarge, i2.8xlarge, d2.xlarge, d2.2xlarge, d2.4xlarge, d2.8xlarge,
+      hi1.4xlarge, hs1.8xlarge, cr1.8xlarge, cc2.8xlarge, cg1.4xlarge]
+    Description: Enter valid value . Default is t2.micro
+  ImageId:
+    Description: Amazon Machine Image ID
+    Type: String
+    Default : "ami-0756fbca465a59a30"
+  KeyPair:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+  WebAppPrivateIP:
+    Description: IP of Web App Server
+    Type: String
+    Default: 10.10.1.4
+  VPCAvailabilityZone:
+    Description: VPCAvailabilityZone
+    Type: String
+    Default: us-east-1a
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref CIDRRange
+      Tags:
+        - Key: Name
+          Value: !Ref VPCName
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Join [":",[ !Ref "AWS::StackName",-internetgateway]]
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+  EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: VPC
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    DependsOn: EIP
+    Properties:
+      AllocationId: !GetAtt EIP.AllocationId
+      SubnetId: !Ref PublicSubnet
+      Tags:
+        - Key: Name
+          Value: !Join ["",[!Ref "AWS::StackName","-natgateway"]]
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+       AvailabilityZone: !Ref VPCAvailabilityZone
+       CidrBlock: !Ref PublicSubnetCidr
+       MapPublicIpOnLaunch: true
+       VpcId: !Ref VPC
+       Tags:
+         - Key: Name
+           Value: !Join [":",[ !Ref "AWS::StackName",-PublicSub]]
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+       AvailabilityZone: !Ref VPCAvailabilityZone
+       CidrBlock: !Ref PrivateSubnetCidr
+       MapPublicIpOnLaunch: false
+       VpcId: !Ref VPC
+       Tags:
+         - Key: Name
+           Value: !Join [":",[ !Ref "AWS::StackName",-PrivateSub]]
+  CustomRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+       VpcId: !Ref VPC
+       Tags:
+         - Key: Name
+           Value: !Join ["",[!Ref "AWS::StackName","-customroutetable"]]
+  CustomRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    DependsOn: CustomRouteTable
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      #DestinationCidrBlock: !GetAtt VPC.CidrBlock
+      RouteTableId: !Ref CustomRouteTable
+  MainRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Join ["",[!Ref "AWS::StackName","-mainroutetable"]]
+  MainRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    DependsOn: NatGateway
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+      RouteTableId: !Ref MainRouteTable
+  PubSubnetRouteTableAssosiation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    DependsOn: CustomRouteTable
+    DependsOn: PublicSubnet
+    Properties:
+      RouteTableId: !Ref CustomRouteTable
+      SubnetId: !Ref PublicSubnet
+  PrivateSubnetRouteTableAssosiation:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      DependsOn: MainRouteTable
+      DependsOn: PrivateSubnet
+      Properties:
+        RouteTableId: !Ref MainRouteTable
+        SubnetId: !Ref PrivateSubnet
+  PublicSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+       GroupDescription: Allow HTTP from my Ip
+       VpcId: !Ref VPC
+       SecurityGroupIngress:
+         - IpProtocol: tcp
+           FromPort: 80
+           ToPort: 80
+           CidrIp: 0.0.0.0/0
+         - IpProtocol: tcp
+           FromPort: 443
+           ToPort: 443
+           CidrIp: 0.0.0.0/0
+         - IpProtocol: tcp
+           FromPort: 22
+           ToPort: 22
+           CidrIp: !Ref SSHLocation
+         - IpProtocol: tcp
+           FromPort: 8080
+           ToPort: 8080
+           CidrIp: 0.0.0.0/0
+       Tags:
+          - Key: Name
+            Value: !Ref PublicSecurityGroupName
+  PrivateSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: PublicSecurityGroup
+    Properties:
+       GroupDescription: Allow Trafic from my Public Subnet Only
+       VpcId: !Ref VPC
+       SecurityGroupIngress:
+         - IpProtocol: tcp
+           FromPort: 8080
+           ToPort: 8080
+           SourceSecurityGroupId: !GetAtt PublicSecurityGroup.GroupId
+         - IpProtocol: tcp
+           FromPort: 22
+           ToPort: 22
+           SourceSecurityGroupId: !GetAtt PublicSecurityGroup.GroupId
+       Tags:
+          - Key: Name
+            Value: !Ref PrivateSecurityGroupName
+  PublicInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref ImageId
+      InstanceType: !Ref InstanceTypeParameter
+      KeyName: !Ref KeyPair
+      SecurityGroupIds:
+        - !Ref PublicSecurityGroup
+      SubnetId: !Ref PublicSubnet
+      Tags:
+        - Key: Name
+          Value: !Ref PublicInstanceName
+      UserData:
+        Fn::Base64: !Sub |
+         #!/bin/bash
+         sudo yum update -y
+         wget http://apache.mirrors.hoobly.com/tomcat/tomcat-8/v8.5.41/bin/apache-tomcat-8.5.41.tar.gz
+         tar xvfz apache-tomcat-8.5.41.tar.gz
+         cd apache-tomcat-8.5.41
+         cd bin
+         ./startup.sh
+         cd ..
+         echo "
+          <!--
+          Licensed to the Apache Software Foundation (ASF) under one or more
+          contributor license agreements.  See the NOTICE file distributed with
+          this work for additional information regarding copyright ownership.
+          The ASF licenses this file to You under the Apache License, Version 2.0
+          (the "License"); you may not use this file except in compliance with
+          the License.  You may obtain a copy of the License at
+
+          http://www.apache.org/licenses/LICENSE-2.0
+
+          Unless required by applicable law or agreed to in writing, software
+          distributed under the License is distributed on an "AS IS" BASIS,
+          WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+          See the License for the specific language governing permissions and
+          limitations under the License.
+         -->
+           <Context antiResourceLocking="false" privileged="true" >
+           <!--  <Valve className="org.apache.catalina.valves.RemoteAddrValve"
+                  allow="127\.\d+\.\d+\.\d+|::1|0:0:0:0:0:0:0:1" />-->
+             <Manager sessionAttributeValueClassNameFilter="java\.lang\.(?:Boolean|Integer|Long|Number|String)|org\.apache\.catalina\.filters\.CsrfPreventionFilter\$LruCache(?:\$1)?|java\.util\.(?:Linked)?HashMap"/>
+           </Context>  " > /webapps/manager/META-INF/context.xml
+         cd /bin
+         ./startup.sh
+         sudo su
+         cd /apache-tomcat-8.5.41/webapps
+         curl -X GET -u admin:admin123 http://104.197.25.162:8081/repository/SAMPLE-SNAP/com/domain/demo/1.0-SNAPSHOT/demo-1.0-20190608.161233-1.war --output demo.war
+         unzip demo.war
+         cd /apache-tomcat-8.5.41/bin
+         ./shutdown.sh
+         ./startup.sh
+  PrivateInstance:
+    Type: AWS::EC2::Instance
+    DependsOn: MainRoute
+    DependsOn: NatGateway
+    Properties:
+      ImageId: !Ref ImageId
+      InstanceType: !Ref InstanceTypeParameter
+      PrivateIpAddress: !Ref WebAppPrivateIP
+      KeyName: !Ref KeyPair
+      SecurityGroupIds:
+        - !Ref PrivateSecurityGroup
+      SubnetId: !Ref PrivateSubnet
+      Tags:
+        - Key: Name
+          Value: !Ref PrivateInstanceName
