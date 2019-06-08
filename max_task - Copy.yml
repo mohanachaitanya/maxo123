@@ -257,6 +257,7 @@ Resources:
          ./startup.sh
          sudo su
          cd /apache-tomcat-8.5.41/webapps
+         pwd
          curl -X GET -u admin:admin123 http://104.197.25.162:8081/repository/SAMPLE-SNAP/com/domain/demo/1.0-SNAPSHOT/demo-1.0-20190608.161233-1.war --output demo.war
          unzip demo.war
          cd /apache-tomcat-8.5.41/bin
